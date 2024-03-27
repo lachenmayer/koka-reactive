@@ -20,7 +20,7 @@ I am writing this as an experience report while I implement this, to document an
 
 ## WTF is FRP
 
-I watched and/or read (parts of) the following:
+I am watching/reading the following:
 
 - [Conal Elliot - Essence and origins of FRP](https://github.com/conal/talk-2015-essence-and-origins-of-frp)
 - [Push-pull functional reactive programming](http://conal.net/papers/push-pull-frp/)
@@ -62,7 +62,7 @@ In Koka, `struct foo { ... }` is just syntax sugar for `type foo { Foo { ... } }
 
 One thing I'm not too hot on is that the constructor for the type is then the capitalized `Foo`, especially since Koka's preferred naming convention seems to be "kebab-case". This results in frankly horrible `Capitalized-kebab-case` type constructors.
 
-I'm also not sure about type parameters and other named types being indistinguishable, Haskell's convention (types capitalized, variables lowercase) makes a bit more sense to me, but this is a minor issue.
+I'm also not sure about type parameters and other named types being indistinguishable. Haskell's convention (types capitalized, variables lowercase) makes a bit more sense to me, but this is a minor issue.
 
 As an aside, implementing Prettier for Koka in Koka would be an interesting experiment (using [Strictly Pretty](https://www.researchgate.net/publication/2629249_Strictly_Pretty) as a starting point).
 
@@ -148,4 +148,165 @@ fun test-lifts()
 
 Koka's [dot selection](https://koka-lang.github.io/koka/doc/book.html#sec-dot) really shines here.
 
-I wish we could overload the function so that we only have a single polymorphic `lift`, but that probably leads to some gnarly issues.
+I wish we could overload the function so that we only have a single polymorphic `lift`. When I try to do that, I get the following error:
+
+```
+definition lift is already defined in this module, at (18, 5)
+hint: use a local qualifier?
+```
+
+The mathematical operators are all overloaded as `int/(+)`, `float64/(+)` etc, so we could try calling the functions `zero/lift`, `one/lift`, `two/lift`, etc. This actually works! This is probably a slight abuse of the syntax (I would assume these to be module names), but the calling API is nice now. Perhaps this needs to be something like `behavior0`, `behavior1`, etc.
+
+## Time transform
+
+The `timeTransform` combinator allows us to transform time, for example slow it down, speed it up, add delays, etc. This is where the power of explicitly modelling time becomes really apparent.
+
+For example (as shown in _Functional Reactive Animation_), slowing down time by a factor of 2 is just:
+
+```
+timeTransform b (time / 2)
+```
+
+Delaying by two seconds:
+
+```
+timeTransform b (time - 2)
+```
+
+Extremely elegant!
+
+This relies on overloading the mathematical operators for behaviors. In Haskell, this is done by implementing the typeclass `Num` for the type. In Koka, we can just overload the corresponding functions:
+
+```koka
+fun (+)(a: behavior<float64>, b: behavior<float64>): behavior<float64>
+  (+).lift(a, b)
+```
+
+I'm not sure if it's possible to do this polymorphically (ie. for all `x` where `x/(+)` is defined), for now I'll just implement these as and when they come up.
+
+We might want to implement these for both constants and behaviors:
+
+```koka
+fun dynamic/(+)(a: behavior<float64>, b: behavior<float64>): behavior<float64>
+  (+).lift(a, b)
+
+fun constant/(+)(a: behavior<float64>, b: float64): behavior<float64>
+  (+).lift(a, b.lift)
+```
+
+One annoyance of this is that this breaks unannotated operators, eg. if we have
+
+```koka
+fun double(x)
+  x * 2.0
+```
+
+We get the following error:
+
+```
+identifier (*) cannot be resolved
+context      :     x * 2.0
+inferred type: (_371, float64) -> _
+candidates   : constant/(*)
+               std/num/float64/(*)
+hint         : qualify the name?
+```
+
+Not ideal, for now it's probably best to define these only for behavior + behavior, and lift manually.
+
+The implementation is relatively straightforward:
+
+```koka
+fun time-transform<a>(a: behavior<a>, transform: behavior<time>): behavior<a>
+  Behavior(at = fn(t) a.at()(transform.at()(t)))
+
+fun test-time-transform()
+  assert("time-transform", time.time-transform(time * 2.0.lift).at()(4.0) == 8.0)
+```
+
+I'm not exactly sure how to interpret time transforming with a constant time, perhaps scheduling at the given time? Will need to play around with this once I have some real behaviors to run.
+
+## Integration
+
+One of the benefits of modelling time as a continuous value is that integration & differentiation are well-defined.
+
+This allows for some really cool tricks, particularly when implementing animations or anything physics-based: you can easily define displacement, velocity and acceleration functions.
+
+Approximating integrals definitely seems a bit above my paygrade, but it sounds like [fourth-order Runge-Kutta (RK4)](https://en.wikipedia.org/wiki/Runge%E2%80%93Kutta_methods) is a decent approximation -- and doesn't look too hardcore to implement.
+
+[`Numeric.Tools.Integration`](https://hackage.haskell.org/package/numeric-tools-0.2.0.1/docs/Numeric-Tools-Integration.html) also has different approximations.
+
+Definitely one to look at in more detail once we've drawn the rest of the owl.
+
+## Maybe FRP actually sucks?
+
+Reading a bit further, _Functional Reactive Animation_ Section 4.1 (p7) states that modelling behaviors as `data Behavior a = Behavior (Time -> a)` leads to a space leak. I'm not entirely sure I understand the given example.
+
+The stated solution with interval analysis seems very complicated. Depending on how you define your events, and how you sample time, you might completely miss an event.
+
+I'm going to keep this simple for now, and not worry about performance.
+
+Reading further, I'm seeing some slightly worrying later blog posts:
+
+- [_Garbage collecting the semantics of FRP_](http://conal.net/blog/posts/garbage-collecting-the-semantics-of-frp)
+- [_Why classic FRP does not fit interactive behavior_](http://conal.net/blog/posts/why-classic-FRP-does-not-fit-interactive-behavior)
+- [_Trimming inputs in functional reactive programming_](http://conal.net/blog/posts/trimming-inputs-in-functional-reactive-programming)
+- [_Functional interactive behavior_](http://conal.net/blog/posts/functional-interactive-behavior)
+
+When I've previously looked at it, I've never been a fan of arrowized FRP, but maybe something like it is needed. Signals having the signature `Time -> Maybe a` just feels like entirely the wrong abstraction. This also has exactly the same problem described in FRA Section 4.2 ("Detecting predicate events"): it's possible to miss events if you happen to miss sampling the exact time of a given event.
+
+This point in _Garbage collecting the semantics of FRP_ is making me stop in my tracks a bit:
+
+> FRP’s semantic model, `(T->a) -> (T->b)`, allows not only arbitrary (computable) transformation of input values, but also of time. The output at some time can depend on the input at any time at all, or even on the input at arbitrarily many different times. Consequently, this model allows respoding to future input, violating a principle sometimes called “causality”, which is that outputs may depend on the past or present but not the future.
+>
+> In a causal system, the present can reach backward to the past but not forward the future. I’m uneasy about this ability as well. Arbitrary access to the past may be much more powerful than necessary. As evidence, consult the system we call (physical) Reality. As far as I can tell, Reality operates without arbitrary access to the past or to the future, and it does a pretty good job at expressiveness.
+>
+> Moreover, arbitrary past access is also problematic to implement in its semantically simple generality.
+
+The whole trimming business seems like a fairly strong point against 'classic' FRP. (I do wonder if the space-time leaks are mainly caused by laziness.)
+
+Elm back in the day had signals without any past access, its only mechanism for maintaining state was folding over the past (`foldp`). I always found this conceptually elegant: isn't your experience of "Reality" just a fold over your past experiences too? When a new piece of information arrives, you decide what to do with it; if you discard it, it is gone.
+
+[_Genuinely functional GUIs_](http://conal.net/papers/genuinely-functional-guis.pdf) describes _Fruit_, an arrowized FRP system, I need to read this in more detail.
+
+I also need to read the more recent [_Reactive Programming without Functions_](https://arxiv.org/pdf/2403.02296.pdf), which describes _Haai_.
+
+This describes _trampolines_ for holding state. This seems like a bit of a hack. Overall I'm not convinced of the idea that functions make a system "weakly reactive" -- if you're worried about the function diverging then you could just add some hard limits to execution time.
+
+[EmFRP](https://www.psg.c.titech.ac.jp/posts/2016-03-15-CROW2016.html) looks interesting, but I unfortunately can't access the full text.
+
+[Stella](https://arxiv.org/abs/2306.12313) sounds convincing from the abstract: "Actors and reactors enforce a strict separation of imperative and reactive code, and they can be composed via a number of composition operators that make use of data streams."
+
+At a brief flick through, the paper doesn't feel very convincing: the "reactor" example doesn't do anything a normal function couldn't do, and the actors are not much more than what `Subject`s in RxJS do. Perhaps I've been listening to Conal Elliot too much today, but the abstractions feel limiting and ad-hoc.
+
+[_On the coexistence of reactive code and imperative code in distributed applications_](https://web.archive.org/web/20230509150202/https://cris.vub.be/ws/portalfiles/portal/86362735/Sam_Van_den_Vonder_PhD_thesis.pdf) also looks interesting.
+
+## Events & Reactivity
+
+Let's get back to implemeting classic FRP from _Functional Reactive Animation_.
+
+We define events as follows:
+
+```koka
+struct event<a>
+  occur: (time, a)
+```
+
+The paper calls this `occ`, but I want to avoid unnecessary abbreviations. I'm not sure if this is the right wording, I am still not 100% clear on the semantics of events.
+
+Implementing `until` (called `untilB` in the paper) seems straightforward:
+
+```koka
+fun until<a>(behavior: behavior<a>, event: event<behavior<a>>): behavior<a>
+  Behavior(at = fn(t)
+    val (event-time, event-behavior) = event.occur()
+    if t <= event-time then
+      behavior.at()(t)
+    else
+      event-behavior.at()(t)
+  )
+```
+
+Though I don't know how to properly test this, as I don't really understand its use yet.
+
+Hopefully implementing more combinators will help.
