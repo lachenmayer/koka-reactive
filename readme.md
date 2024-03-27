@@ -310,3 +310,38 @@ fun until<a>(behavior: behavior<a>, event: event<behavior<a>>): behavior<a>
 Though I don't know how to properly test this, as I don't really understand its use yet.
 
 Hopefully implementing more combinators will help.
+
+## Event handling
+
+This part of the _Functional Reactive Animation_ (section 2.3) implements the various event transformation operators, using various types of arrows.
+
+I want to see if it's possible to implement these by defining new infix operators. I'm not sure what the best name for these is, but I would imagine it's some kind of `map`.
+
+I tried to find how this works in Koka, but all I could find was the [definitions](https://github.com/koka-lang/koka/blob/6da642999f7847a4d77076e6b99d141df0e17913/lib/std/core/types.kk#L27-L34) for the built-in infix operators:
+
+```koka
+pub infixr 80  (^)
+pub infixl 70  (*), (%), (/), cdiv, cmod
+pub infixr 60  (++)
+pub infixl 60  (+), (-)
+pub infixr 55  (++.)
+pub infix  40  (!=), (==), (<=), (>=), (<), (>)
+pub infixr 30  (&&)
+pub infixr 20  (||)
+```
+
+However it seems that `infix` isn't a keyword, and neither are `infixr`/`infixl`.
+
+So, scrap that, let's go with `map-*`:
+
+```koka
+fun map<a, b>(event: event<a>, f: (time, a) -> b): event<b>
+  val (time, value) = event.occur()
+  Event((time, f(time, value)))
+
+fun map-time<a, b>(event: event<a>, f: time -> b): event<b>
+  event.map fn(time, _) f(time)
+
+fun map-value<a, b>(event: event<a>, f: a -> b): event<b>
+  event.map fn(_, value) f(value)
+```
