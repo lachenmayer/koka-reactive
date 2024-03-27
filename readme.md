@@ -110,3 +110,42 @@ Two possible solutions:
 2. `at(time)(5.0)`
 
 I'm not sure which I prefer.
+
+Let's get into the habit of writing tests immediately:
+
+```koka
+fun test-time()
+  assert("time is identity", at(time)(5.0) == 5.0)
+```
+
+Koka's VS Code integration has a neat feature where you can run functions beginning with `test...` (and `example...` & `main`).
+
+## Lift
+
+The next combinator is `lift`, which is used to turn constants & pure functions into corresponding behaviors.
+
+This has different variants based on the number of arguments, `lift0`, `lift1`, `lift2` (etc.)
+
+These are fairly straightforward to implement:
+
+```koka
+fun lift0<a>(constant: a): behavior<a>
+  Behavior(at = fn(_) constant)
+
+fun lift1<a, b>(f: a -> b, a: behavior<a>): behavior<b>
+  Behavior(at = fn(t) f(a.at()(t)))
+
+fun lift2<a, b, c>(f: (a, b) -> c, a: behavior<a>, b: behavior<b>): behavior<c>
+  Behavior(at = fn(t) f(a.at()(t), b.at()(t)))
+
+fun test-lifts()
+  assert("lift0", "yes".lift0.at()(5.0) == "yes")
+  fun double(x)
+    x * 2.0
+  assert("lift1", double.lift1(time).at()(5.0) == 10.0)
+  assert("lift2", float64/(*).lift2(time, 2.0.lift0).at()(5.0) == 10.0)
+```
+
+Koka's [dot selection](https://koka-lang.github.io/koka/doc/book.html#sec-dot) really shines here.
+
+I wish we could overload the function so that we only have a single polymorphic `lift`, but that probably leads to some gnarly issues.
