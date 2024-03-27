@@ -4,8 +4,11 @@ alias time = float64
 struct behavior<a>
   at: time -> a
 
-val time: behavior<time> = Behavior(at = fn(t) t)
+fun identity<a>(x: a): a
+  x
+
+val time: behavior<time> = Behavior(at = identity)
 
 fun main()
-  val t: time -> time = time.at
-  println(t(5.0).show)
+  val t = at(time)(5.0)
+  println(t.show)
