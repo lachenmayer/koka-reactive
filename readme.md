@@ -283,7 +283,7 @@ At a brief flick through, the paper doesn't feel very convincing: the "reactor" 
 
 ## Events & Reactivity
 
-Let's get back to implemeting classic FRP from _Functional Reactive Animation_.
+Let's get back to implementing classic FRP from _Functional Reactive Animation_.
 
 We define events as follows:
 
@@ -313,7 +313,7 @@ Hopefully implementing more combinators will help.
 
 ## Event handling
 
-This part of the _Functional Reactive Animation_ (section 2.3) implements the various event transformation operators, using various types of arrows.
+The next part of the _Functional Reactive Animation_ (section 2.3) implements the various event transformation operators, using various types of arrows.
 
 I want to see if it's possible to implement these by defining new infix operators. I'm not sure what the best name for these is, but I would imagine it's some kind of `map`.
 
@@ -345,3 +345,179 @@ fun map-time<a, b>(event: event<a>, f: time -> b): event<b>
 fun map-value<a, b>(event: event<a>, f: a -> b): event<b>
   event.map fn(_, value) f(value)
 ```
+
+Straightforward enough.
+
+The paper has a `constEv` operator for constant events -- this is unnecessary in our implementation because we can just use the `Event((time, value))` constructor.
+
+## External events & behaviors
+
+The next section mentions external events. The paper only considers mouse presses: `lbp`, `rbp` for **l**eft and **r**ight **b**utton **p**ress respectively.
+
+The type signature is quite interesting: `Time -> Event (Event ())`.
+
+When called with some time `t0`, `lbp(t0)` returns an event which in turn yields _another_ event. This event represents the mouse button being lifted.
+
+Implementing external events definitely adds quite a bit of complexity at this point -- I'm not sure if we have enough of the puzzle in place to warrant exploring this.
+
+On the other hand, it is far more interesting to have something actually interactive to play with.
+
+Also, I really want to figure out how the space-time leaks, trimming, etc. actually play out in practice.
+
+Reading a bit further: "Certain external phenomena can be treated as behaviors, too. For example, the position of the mouse can naturally be thought of as a vector behavior."
+
+The example of following the mouse using a spring is extremely nice, a true "functional pearl".
+
+Searching the [Koka source](https://github.com/koka-lang/koka) for "mouse" reveals that Koka actually has a comprehensive DOM model.
+
+The fastest way to get to some real events would probably be to call DOM methods directly from Koka. This does mean we need to compile to JS and run this inside a browser.
+
+In an ideal world, I would like to specify a generic "system interface" which would make the Koka programs backend-independent, similar to React Native's native interface. Each backend would then need to implement certain `extern import`s.
+
+Definitely worth exploring how easy it is to run Koka in a browser for now.
+
+## Digression: `std/time`
+
+Checking out the library docs on the website, I come across the [`std/time`](https://koka-lang.github.io/koka/doc/std_time.html) module. This has some really interesting implementations of timestamps, instants, time math etc.
+
+Perhaps we should be using this as the `time` type?
+
+Interestingly, timestamps are implemented as [`ddouble`](https://koka-lang.github.io/koka/doc/std_num_ddouble.html#type_space_ddouble), ie. 128-bit floating point numbers. This seems... overkill?
+
+Considering that one of the submodules is `std/time/astro`, I assume this was implemented for some kind of scientific time measurement usecase.
+
+Looking at the implementation of [`now()`](https://github.com/koka-lang/koka/blob/6da642999f7847a4d77076e6b99d141df0e17913/lib/std/time/chrono.kk#L53-L57), obviously all of the existing backends use (64-bit) Unix timestamps which need to be converted into `ddouble`s.
+
+> Instants use the mighty 128-bit ddouble timestamps to represent a duration since the epoch. This gives very high range and precision (up 31 decimal digits). It spans about 10^300 years into the past and future, well beyond the expected life span of the universe. Any time can be expressed with atto-second (10^-18) precision up to about 300,000 years in the past and future, and with pico-second (10^-12) precision any time since the age of the universe (about 13.8 billion years ago) up to 30 billion years into the future. For durations under 300 years, the precision is in excess of a zepto second (10^-21). For comparison, it takes light about 500 zepto-seconds to travel the length of an hydrogen atom.
+
+Incredibly over-engineered. This should not be in the std lib, at least not as `std/time`. Maybe `std/time/high-precision` or something like that...
+
+Anyway.
+
+## Running Koka in the browser
+
+Looking at the compiler help prompt, we can use `koka --target=js` to output JS. There's also a `jsweb` target, this might actually be the one we want.
+
+We start with a simple hello world file `web.kk`:
+
+```koka
+fun main()
+  println("hello web")
+```
+
+Using `koka --target=js --execute web.kk`, we get some compiler output followed by `hello web`!
+
+That's pretty nice, this probably runs using Node.
+
+Let's try the same with the `jsweb` target (`koka --target=jsweb --execute web.kk`):
+
+```
+...more compiler output here...
+linking : web/@main
+created : .koka/v3.1.1/js-debug-67a439/index.html
+/bin/sh: .koka/v3.1.1/js-debug-67a439/index.html: Permission denied
+```
+
+Shame!
+
+Looking at the created directory, we can see our main entrypoint in `web__main.mjs`:
+
+```js
+// Koka generated module: web/@main, koka version: 3.1.1
+"use strict"
+
+// imports
+import * as $std_core_types from "./std_core_types.mjs"
+import * as $std_core_hnd from "./std_core_hnd.mjs"
+import * as $std_core_exn from "./std_core_exn.mjs"
+import * as $std_core_bool from "./std_core_bool.mjs"
+import * as $std_core_order from "./std_core_order.mjs"
+import * as $std_core_char from "./std_core_char.mjs"
+import * as $std_core_int from "./std_core_int.mjs"
+import * as $std_core_vector from "./std_core_vector.mjs"
+import * as $std_core_string from "./std_core_string.mjs"
+import * as $std_core_sslice from "./std_core_sslice.mjs"
+import * as $std_core_list from "./std_core_list.mjs"
+import * as $std_core_maybe from "./std_core_maybe.mjs"
+import * as $std_core_either from "./std_core_either.mjs"
+import * as $std_core_tuple from "./std_core_tuple.mjs"
+import * as $std_core_show from "./std_core_show.mjs"
+import * as $std_core_debug from "./std_core_debug.mjs"
+import * as $std_core_delayed from "./std_core_delayed.mjs"
+import * as $std_core_console from "./std_core_console.mjs"
+import * as $std_core from "./std_core.mjs"
+import * as $web from "./web.mjs"
+
+// externals
+
+// type declarations
+
+// declarations
+
+export function _expr() /* () -> console/console () */ {
+  return $std_core_console.printsln("hello web")
+}
+
+export function _main() /* () -> <st<global>,console/console,div,fsys,ndet,net,ui> () */ {
+  return $std_core_console.printsln("hello web")
+}
+
+// main entry:
+_main($std_core.id)
+```
+
+(Prettier in VS Code prettified this for me, the formatting is not exactly as is...)
+
+First thoughts: there are a lot of imports here. Most of these aren't used (as VS Code tells me). This could probably be tree-shaken further. I wonder if this is the entire stdlib, or genuinely only the parts that are needed for `println`.
+
+Anyway, surprisingly nice output, even when looking at some of the included core lib files.
+
+I am not sure what the `_expr` export is for.
+
+Surprisingly, there is another file `web.mjs`, which has an export called `main`. This looks ideal for importing into larger JS apps.
+
+I wonder why the code is duplicated in `web__main.mjs`, rather than just calling the "actual" main.
+
+The `index.html` is trivial.
+
+Obviously, simply opening the `index.html` in a browser doesn't work, because module imports don't work locally...
+
+```
+Access to script at 'file:///Users/harry/Code/koka-reactive/.koka/v3.1.1/js-debug-67a439/web__main.mjs' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: http, isolated-app, arc, https, chrome-untrusted, data, chrome-extension, chrome.
+```
+
+Truly annoying, but what can you do. Definitely not the first (or last...) time I've seen this error, a quick `npx http-server .koka/v3.1.1/js-debug-67a439` gets us a lovely artisanal local web server.
+
+I'm pleasantly surprised: we see `hello web` on the page itself, rather than just as console output. This is really nice for getting started, I can see the first-use experience being quite nice once some of the kinks are ironed out.
+
+I want to debug the "Permission denied" error above, if this worked out of the box this would be _such_ a nice experience, even for beginners.
+
+I search the Koka codebase for "jsweb", and find some interesting files.
+
+I want to jump to definition in the Haskell files though, but I don't have a proper Haskell dev environment set up.
+
+I download the VS Code Haskell extension, but it tells me I need [GHCup](https://www.haskell.org/ghcup/). OK, happy to install that. Good to know that the Haskell world has at least made some progress on usability in the last decade (ie. since I [last used Haskell in anger](https://github.com/lachenmayer/arrowsmith) - the installation instructions are a blast from the past...).
+
+Quick `curl | sh` job to install, the script asks a bunch of questions and has useful help links. This is truly so much better than setting up all of this manually, thanks to the Rust community for setting the standard for how a programming environment should be installed.
+
+Also amazing that it ends with this line: "If you are new to Haskell, check out https://www.haskell.org/ghcup/steps/". Extremely nice.
+
+I reopen the Koka project, and I get a toast stating "Working out the project GHC version. This might take a while...". It does indeed take a while, ain't nobody got time for that.
+
+The `codeGen` function in `CodeGen.hs` writes the `created : .koka/v3.1.1/js-debug-67a439/index.html` line, so in theory we only need to find where this is called and see what happens next.
+
+I tried looking up what the `--execute` flag actually sets, it seems to be setting a field called `evaluate`?
+
+Call tree: `codeGen` <- `moduleCodegen` <- `moduleCompile` <- `modulesBuild` <- `modulesFullBuild` -- this is unused? 🤔
+
+Anyway, time to park this. Finding the GHC version still hasn't completed, so close but no cigar Haskell...
+
+## Koka DOM
+
+Back to the task at hand: trying to use the Koka DOM library so we can get some real IO events into our lovely new FRP system.
+
+Importing `std/sys/dom` does not work, hmm!
+
+Looking at the repo more closely, the DOM code is in `lib/v1/std/sys/dom`. This might mean that this is code that doesn't even run on the current version of Koka (v3), hmmmmm.
+
+Ok, experiment failed.
