@@ -1,22 +1,30 @@
-# koka-reactive
-
 This is an attempt at implementing Conal Elliot's _functional reactive programming_ (FRP) paradigm in [Koka](https://koka-lang.github.io/).
+
+I am writing this as an experience report / "lab notebook" as I implement this, to document any learnings as well as any issues/roadblocks I encounter along the way.
+
+A lot of the writing about functional programming only focuses on the ideas and theory, and leaves out all of the bits in between. My goal is to document the entire thought process, as well as all of the inscrutable errors and broken/incomplete tooling we'll be sure to encounter along the way.
+
+**This is very much a work in progress.** It's unclear if this project will ever result in runnable software, but you might get some interesting insights about FRP, Koka, and what computer science research/experimentation actually looks like in practice.
+
+**Buzzword bingo:** _cross-platform reactive UI framework in functional research language with algebraic effects_
+
+# 2024-03-27
+
+## Goals
 
 FRP is an elegant system for describing time-varying computations using the concepts of _behaviors_ and _events_. Behaviors represent _continuous_ time-varying values, while events describe _discrete_ streams of values, with associated times.
 
 As I only have experience with "FRP-ish" systems which model time as discrete streams, I want to explore the implications of continuous time.
 
-I also want to explore [Koka](https://koka-lang.github.io/), an extremely interesting functional programming language. Koka's defining feature is effect types/handlers, which is a beautiful, extremely general abstraction. It may be possible to express FRP using effects somehow, but I am unsure how this would look.
+I also want to explore [Koka](https://koka-lang.github.io/), an extremely interesting functional programming language. Koka's defining feature is algebraic effect types/handlers, which is a beautiful, extremely general abstraction. It may be possible to express FRP using effects somehow, but I am unsure how this would look.
 
 Koka also strives to be ["minimal but general"](https://koka-lang.github.io/koka/doc/book.html#why-mingen) in all other design aspects, which is philosophically very aligned with the goals of FRP.
 
-Ideally, I would like to be able to implement a full end-to-end interactive application using the system. Since Koka is designed to be easily embeddable and can compile to WebAssembly, it should be possible to implement a web renderer.
+Ideally, I would like to be able to implement a full end-to-end interactive application using the system. Since Koka is designed to be easily embeddable and can compile to JavaScript and WebAssembly, it should be possible to implement a web renderer.
 
 Another fun experiment would be to try to write a reactive UI layer in Koka on top of some kind of Rust graphics library, eg. something like [egui](https://github.com/emilk/egui).
 
 As I'm currently making a living building an [iOS app](https://apps.apple.com/gb/app/picnic-photos/id6450713784), another interesting goal could be to implement a Koka UI layer which calls into UIKit (similar to SwiftUI or React Native). Using Xcode any longer than necessary is not exactly my idea of fun though, so this is maybe a bit less likely to happen...
-
-I am writing this as an experience report while I implement this, to document any insights as well as issues/roadblocks I encounter along the way.
 
 ## WTF is FRP
 
@@ -350,6 +358,8 @@ Straightforward enough.
 
 The paper has a `constEv` operator for constant events -- this is unnecessary in our implementation because we can just use the `Event((time, value))` constructor.
 
+# 2024-03-28
+
 ## External events & behaviors
 
 The next section mentions external events. The paper only considers mouse presses: `lbp`, `rbp` for **l**eft and **r**ight **b**utton **p**ress respectively.
@@ -521,3 +531,5 @@ Importing `std/sys/dom` does not work, hmm!
 Looking at the repo more closely, the DOM code is in `lib/v1/std/sys/dom`. This might mean that this is code that doesn't even run on the current version of Koka (v3), hmmmmm.
 
 Ok, experiment failed.
+
+**To be continued...**
