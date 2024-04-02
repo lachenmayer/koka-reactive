@@ -1,4 +1,4 @@
-This is an attempt at implementing Conal Elliot's _functional reactive programming_ (FRP) paradigm in [Koka](https://koka-lang.github.io/).
+This is an attempt at implementing Conal Elliott's _functional reactive programming_ (FRP) paradigm in [Koka](https://koka-lang.github.io/).
 
 I am writing this as an experience report / "lab notebook" as I implement this, to document any learnings as well as any issues/roadblocks I encounter along the way.
 
@@ -30,7 +30,7 @@ As I'm currently making a living building an [iOS app](https://apps.apple.com/gb
 
 I am watching/reading the following:
 
-- [Conal Elliot - Essence and origins of FRP](https://github.com/conal/talk-2015-essence-and-origins-of-frp)
+- [Conal Elliott - Essence and origins of FRP](https://github.com/conal/talk-2015-essence-and-origins-of-frp)
 - [Push-pull functional reactive programming](http://conal.net/papers/push-pull-frp/)
 - [Functional Reactive Animation](http://conal.net/papers/icfp97/icfp97.pdf)
 - [Functional Reactive Programming - Haskell wiki](https://wiki.haskell.org/Functional_Reactive_Programming)
@@ -53,7 +53,7 @@ Also some of the names of operators will need a bit of work. For example, I don'
 
 ## Starting the implementation: behaviors
 
-Conal Elliot's papers/talks use "semantic functions" to define the, named _μ_ (for "meaning") or `at`/`occ` for behaviors/events respectively.
+Conal Elliott's papers/talks use "semantic functions" to define the, named _μ_ (for "meaning") or `at`/`occ` for behaviors/events respectively.
 
 This took me a moment to understand: if I have `at: Behavior a -> (T -> a)`, how do I get a value of `Behavior a`, and what does it contain?
 
@@ -285,7 +285,7 @@ This describes _trampolines_ for holding state. This seems like a bit of a hack.
 
 [Stella](https://arxiv.org/abs/2306.12313) sounds convincing from the abstract: "Actors and reactors enforce a strict separation of imperative and reactive code, and they can be composed via a number of composition operators that make use of data streams."
 
-At a brief flick through, the paper doesn't feel very convincing: the "reactor" example doesn't do anything a normal function couldn't do, and the actors are not much more than what `Subject`s in RxJS do. Perhaps I've been listening to Conal Elliot too much today, but the abstractions feel limiting and ad-hoc.
+At a brief flick through, the paper doesn't feel very convincing: the "reactor" example doesn't do anything a normal function couldn't do, and the actors are not much more than what `Subject`s in RxJS do. Perhaps I've been listening to Conal Elliott too much today, but the abstractions feel limiting and ad-hoc.
 
 [_On the coexistence of reactive code and imperative code in distributed applications_](https://web.archive.org/web/20230509150202/https://cris.vub.be/ws/portalfiles/portal/86362735/Sam_Van_den_Vonder_PhD_thesis.pdf) also looks interesting.
 
@@ -531,5 +531,87 @@ Importing `std/sys/dom` does not work, hmm!
 Looking at the repo more closely, the DOM code is in `lib/v1/std/sys/dom`. This might mean that this is code that doesn't even run on the current version of Koka (v3), hmmmmm.
 
 Ok, experiment failed.
+
+# 2024-03-29
+
+## Arbitrary time is a problem: towards pull-based FRP (eg. Yampa)
+
+Some further thinking in the proverbial hammock. With arbitrary time as input, the issue of matching exact times to behavior values is really very serious.
+
+Let's say we have an input device (eg. touch screen / mouse) that samples at a frame rate `I` Hz, and we want to output frames at `O` Hz (frames per second).
+
+In general, we can assume that `I != O`, and it is more likely that `I > O`, if we're dealing with raw hardware events.
+
+To be able to accurately consider the input as a behavior, we need some way of interpolating between values, ie. resampling. This means we need to know what the sample rate is.
+
+Even if we don't want to interpolate, ie. just getting the latest event is accurate enough for our purposes, we still need to know the time frame for which a single event is valid. At each time `t`, each input event is valid in the interval `(t, t + 1/I)` seconds.
+
+The trimming problem rears its head again: even if we don't want to allow access to past events, we need to persist input events for at least `1/I` seconds.
+
+The FRP model doesn't state what happens when you ask for an event in the past: should it just return the oldest event we have stored? Surely this breaks integration.
+
+More philosophically, arbitrary access to the past is physically impossible, unless you have infinite memory.
+
+[_Garbage collecting the semantics of FRP_](http://conal.net/blog/posts/garbage-collecting-the-semantics-of-frp) asks:
+
+> I suspect the whole event model can be replaced by integration. Integration is the main remaining piece.
+>
+> How weak a semantic model can let us define integration?
+
+Definitely an interesting thought.
+
+What if we make `t` relative, ie. `t = 0` is always "now"? Then values at `t > 0` can be interpreted as scheduled/future values ("timeout in 30s", "show this notification at 8pm", etc.), and `t < 0` as past values. We could then add bounds to some behaviors, ie. certain behaviors (I would suspect most of them) would not support accessing past values.
+
+Getting a value `at(t)` where `t > 0` feels like it is always equivalent to waiting for some timeout `t`, and then fetching `at(0)`.
+
+Is it worth elevating this to a fundamental part of the model? I suspect not. If we get rid of time altogether, we're left with a single `poll: () -> a`. I would imagine many behaviors to return a value similar to Rust futures' [`Poll`](https://doc.rust-lang.org/std/task/enum.Poll.html) (`Poll a = Ready a | Pending`).
+
+How can we recover integration and differentiation from this? We could `poll` at a fixed rate, and just linearly interpolate between points. Then the differential is just the slope, and we can approximate the integral using the [trapezoidal rule](https://en.wikipedia.org/wiki/Trapezoidal_rule).
+
+This is the "pull" part of push-pull FRP. What about push?
+
+An interesting post here about time leaks in arrowized FRP: https://web.archive.org/web/20140820094516/http://blog.edwardamsden.com/2011/03/demonstrating-time-leak-in-arrowized.html
+
+Again, integration is the culprit: it depends on all past values. The output is only required after 30 seconds, so this builds up an extremely long sequence of thunks.
+
+Watching [Paul Hudak - Euterpea: From signals to symphonies](https://www.youtube.com/watch?v=xtmo6Bmfahc): a beautiful system for music. In music, modelling the time parameter explicitly absolutely makes sense. All the values you need have clear bounds: in music, we are only really interested in audible frequencies, which gives us obvious parameters for sampling rates (via Shannon-Nyquist etc.).
+
+The [physical model of a flute](https://youtu.be/xtmo6Bmfahc?t=2866) is extremely cool.
+
+Reading about Yampa's [reactimate](https://wiki.haskell.org/Yampa/reactimate), this seems like exactly the polling/sampling loop I imagined.
+
+For music / motion graphics / animation etc. where it's possible to fully control time, this does seem like an incredibly powerful paradigm. Arrowized Ableton? Arrowized After Effects?
+
+## Other FRP models
+
+[Sodium](https://github.com/SodiumFRP/sodium) looks interesting, worth exploring further. Very "functional programming" approach to docs: no useful information in the readme, the only website is the user forums.
+
+Some really interesting discussions on that forum at first glance, eg. [Preventing space leaks](http://sodium.nz/t/preventing-space-leaks/314).
+
+[Hareactive](https://github.com/funkia/hareactive) looks very cool. The concepts of _behavior_, _stream_, _future_ are a great distillation of the concepts. ([rsocket-js](https://rsocket.io/guides/rsocket-js/) calls futures "singles", which is possibly even clearer.)
+
+The concept of [`Now`](https://github.com/funkia/hareactive?tab=readme-ov-file#now) is interesting, though I am not sure I understand it fully yet.
+
+[Turbine](https://github.com/funkia/turbine) is a frontend framework built on top of Hareactive.
+
+[Funkia](https://github.com/funkia) as a whole seems like a really interesting org: pure functional programming for TypeScript.
+
+[Simon Friis Vindum (@paldepind)](https://github.com/paldepind) seems to be behind all of this. He also created [flyd](https://github.com/paldepind/flyd).
+
+## Hareactive
+
+Hareactive is definitely worth a closer look.
+
+Very interestingly, its "time" seems to be an abstract tick, rather than "real" time: https://github.com/funkia/hareactive/blob/92f2fad1ff8a715a75fe8013f7f9585ceab7ce06/src/clock.ts
+
+This makes sense, it has [`time: Behavior<Time>`](https://github.com/funkia/hareactive/blob/92f2fad1ff8a715a75fe8013f7f9585ceab7ce06/src/time.ts#L70) which calls `Date.now()` using [`fromFunction`](https://github.com/funkia/hareactive/blob/92f2fad1ff8a715a75fe8013f7f9585ceab7ce06/src/behavior.ts#L421).
+
+It seems to support [push & pull](https://github.com/funkia/hareactive/blob/92f2fad1ff8a715a75fe8013f7f9585ceab7ce06/src/common.ts#L18-L23).
+
+One thing that seems strange is that parents & children seem to be linked both ways, most likely so that behaviors can push & pull both ways. I don't think Koka's semantics even allow representing this (perhaps with refs?), so I don't think this approach can really work.
+
+The implementation is very imperative overall, this can hopefully be made more functional.
+
+The `Now` monad seems like something that could be implemented using effect handlers. `runNow` is clearly an effect.
 
 **To be continued...**
